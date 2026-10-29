@@ -5,7 +5,9 @@ project(OpenA2DP VERSION 0.1.0 LANGUAGES C CXX)
 option(OPENA2DP_BUILD_WASAPI_POC "Build the Windows WASAPI + LDAC PoC" ON)
 
 add_library(opena2dp_protocol STATIC
+    src/a2dp_media.cpp
     src/avdtp.cpp
+    src/avdtp_session.cpp
 )
 target_include_directories(opena2dp_protocol PUBLIC include)
 target_compile_features(opena2dp_protocol PUBLIC cxx_std_20)

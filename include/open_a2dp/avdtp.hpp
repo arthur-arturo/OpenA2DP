@@ -47,6 +47,11 @@ enum class Error {
     InvalidSignalId,
     InvalidTransactionLabel,
     FragmentationUnsupported,
+    InvalidFragmentSequence,
+    InvalidFragmentCount,
+    InvalidMtu,
+    MessageTooLarge,
+    TooManyFragments,
     InvalidSeid,
     InvalidDiscoverPayload,
     EmptySeidList,
@@ -57,7 +62,12 @@ enum class Error {
     DuplicateCapabilityCategory,
     UnsupportedCodec,
     InvalidSbcConfiguration,
+    InvalidRtpHeader,
+    InvalidMediaPayload,
     PacketTooLarge,
+    NoTransactionAvailable,
+    TransactionNotPending,
+    InvalidStreamState,
 };
 
 template <typename T>
@@ -78,6 +88,34 @@ struct Header {
 struct PacketView {
     Header header{};
     std::span<const Byte> payload{};
+};
+
+struct AssembledMessage {
+    Header header{};
+    std::vector<Byte> payload;
+};
+
+struct MessageAssemblerEvent {
+    bool complete = false;
+    AssembledMessage message{};
+};
+
+class MessageAssembler final {
+public:
+    explicit MessageAssembler(std::size_t l2capMtu = 672) noexcept
+        : l2capMtu_(l2capMtu) {}
+
+    Result<MessageAssemblerEvent> consume(std::span<const Byte> packet);
+    bool active() const noexcept { return active_; }
+    void reset() noexcept;
+
+private:
+    std::size_t l2capMtu_;
+    bool active_ = false;
+    Header pendingHeader_{};
+    Byte expectedPackets_ = 0;
+    Byte receivedPackets_ = 0;
+    std::vector<Byte> pendingPayload_;
 };
 
 enum class MediaType : Byte {
@@ -131,6 +169,12 @@ Result<std::vector<Byte>> makeCommandPacket(
     Byte transactionLabel,
     SignalId signalId,
     std::span<const Byte> payload = {});
+Result<std::vector<std::vector<Byte>>> fragmentSignalMessage(
+    Byte transactionLabel,
+    MessageType messageType,
+    SignalId signalId,
+    std::span<const Byte> payload,
+    std::size_t l2capMtu);
 
 Result<std::vector<Byte>> makeDiscoverCommand(Byte transactionLabel);
 Result<std::vector<Byte>> makeGetCapabilitiesCommand(

@@ -1,4 +1,6 @@
 #include "open_a2dp/avdtp.hpp"
+#include "open_a2dp/a2dp_media.hpp"
+#include "open_a2dp/avdtp_session.hpp"
 
 #include <algorithm>
 #include <array>
@@ -17,6 +19,10 @@ using opena2dp::avdtp::ServiceCategory;
 using opena2dp::avdtp::SignalId;
 using opena2dp::avdtp::SepType;
 using opena2dp::avdtp::SbcCodecInfo;
+using opena2dp::avdtp::SourceStreamState;
+using opena2dp::avdtp::StreamState;
+using opena2dp::avdtp::TransactionTable;
+using opena2dp::a2dp::RtpHeader;
 
 namespace {
 
@@ -75,6 +81,116 @@ void testMalformedPacketsAreRejected() {
     expect(opena2dp::avdtp::makeDiscoverCommand(0x10).error ==
                Error::InvalidTransactionLabel,
            "reject transaction labels wider than four bits");
+}
+
+void testAvdtpFragmentationRoundTrip() {
+    const std::array<Byte, 10> payload{
+        0xA0, 0xA1, 0xA2, 0xA3, 0xA4,
+        0xA5, 0xA6, 0xA7, 0xA8, 0xA9,
+    };
+    const auto fragments = opena2dp::avdtp::fragmentSignalMessage(
+        6, MessageType::Accept, SignalId::GetCapabilities, payload, 6);
+    expect(static_cast<bool>(fragments), "fragment a signaling response");
+    expect(fragments.value.size() == 3, "split message into start/continue/end");
+    expect(fragments.value[0] ==
+               std::vector<Byte>({0x66, 0x03, 0x02, 0xA0, 0xA1, 0xA2}),
+           "start fragment carries NOSP then signal ID");
+    expect(fragments.value[1] ==
+               std::vector<Byte>({0x6A, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7}),
+           "continue fragment carries common header and payload");
+    expect(fragments.value[2] == std::vector<Byte>({0x6E, 0xA8, 0xA9}),
+           "end fragment carries the final bytes");
+
+    opena2dp::avdtp::MessageAssembler assembler(6);
+    const auto start = assembler.consume(fragments.value[0]);
+    expect(static_cast<bool>(start) && !start.value.complete && assembler.active(),
+           "start fragment opens the assembly state");
+    const auto continuation = assembler.consume(fragments.value[1]);
+    expect(static_cast<bool>(continuation) && !continuation.value.complete &&
+               assembler.active(),
+           "continue fragment extends the pending message");
+    const auto end = assembler.consume(fragments.value[2]);
+    expect(static_cast<bool>(end) && end.value.complete && !assembler.active(),
+           "end fragment completes and resets the assembly state");
+    expect(end.value.message.header.transactionLabel == 6 &&
+               end.value.message.header.packetType == PacketType::Single &&
+               end.value.message.header.messageType == MessageType::Accept &&
+               end.value.message.header.signalId ==
+                   static_cast<Byte>(SignalId::GetCapabilities),
+           "reassembled message restores its original AVDTP header");
+    expect(std::equal(end.value.message.payload.begin(),
+                      end.value.message.payload.end(), payload.begin(),
+                      payload.end()),
+           "reassembled payload matches original bytes");
+}
+
+void testFragmentationRejectsInvalidSequences() {
+    const std::array<Byte, 10> payload{};
+    const auto fragments = opena2dp::avdtp::fragmentSignalMessage(
+        2, MessageType::Command, SignalId::GetCapabilities, payload, 6);
+    expect(static_cast<bool>(fragments), "create fragments for validation tests");
+
+    opena2dp::avdtp::MessageAssembler assembler(6);
+    expect(assembler.consume(fragments.value[1]).error ==
+               Error::InvalidFragmentSequence,
+           "reject continuation without a start");
+
+    expect(static_cast<bool>(assembler.consume(fragments.value[0])),
+           "accept valid start before sequence-mismatch test");
+    auto wrongTransaction = fragments.value[1];
+    wrongTransaction[0] = static_cast<Byte>(wrongTransaction[0] + 0x10);
+    expect(assembler.consume(wrongTransaction).error ==
+               Error::TransactionLabelMismatch,
+           "reject fragments with a different transaction label");
+    expect(!assembler.active(), "reset assembler after a sequence error");
+
+    auto wrongPacketCount = fragments.value[0];
+    wrongPacketCount[1] = 2;
+    expect(static_cast<bool>(assembler.consume(wrongPacketCount)),
+           "accept a syntactically valid start packet");
+    expect(assembler.consume(fragments.value[1]).error ==
+               Error::InvalidFragmentCount,
+           "require an End packet at the advertised packet count");
+
+    expect(opena2dp::avdtp::fragmentSignalMessage(
+               1, MessageType::Command, SignalId::Discover, {}, 1).error ==
+               Error::InvalidMtu,
+           "reject an L2CAP MTU too small for an AVDTP header");
+
+    const std::vector<Byte> hugePayload(1020, 0x55);
+    expect(opena2dp::avdtp::fragmentSignalMessage(
+               1, MessageType::Command, SignalId::GetCapabilities,
+               hugePayload, 4).error == Error::TooManyFragments,
+           "reject messages requiring more than 255 signaling fragments");
+}
+
+void testSbcRtpPacketization() {
+    const RtpHeader header{
+        96, true, 0x1234, 0x01020304, 0xAABBCCDD,
+    };
+    const std::array<Byte, 4> encodedFrame{0x9C, 0x42, 0x03, 0x35};
+    const auto packet = opena2dp::a2dp::makeSbcRtpPacket(
+        header, 1, encodedFrame, 17);
+    expect(static_cast<bool>(packet), "build SBC RTP media packet");
+
+    const std::array<Byte, 17> expected{
+        0x80, 0xE0, 0x12, 0x34, 0x01, 0x02, 0x03, 0x04, 0xAA,
+        0xBB, 0xCC, 0xDD, 0x01, 0x9C, 0x42, 0x03, 0x35,
+    };
+    expect(std::equal(packet.value.begin(), packet.value.end(),
+                      expected.begin(), expected.end()),
+           "serialize RTP fields big-endian and SBC frame count");
+
+    expect(opena2dp::a2dp::makeSbcRtpPacket(
+               header, 1, encodedFrame, 16).error == Error::PacketTooLarge,
+           "reject RTP packet larger than negotiated L2CAP MTU");
+    expect(opena2dp::a2dp::makeSbcRtpPacket(
+               RtpHeader{128, false, 0, 0, 0}, 1, encodedFrame, 32).error ==
+               Error::InvalidRtpHeader,
+           "reject payload type values above seven bits");
+    expect(opena2dp::a2dp::makeSbcRtpPacket(
+               header, 0, encodedFrame, 32).error == Error::InvalidMediaPayload,
+           "reject an empty SBC frame count");
 }
 
 void testDiscoverAccept() {
@@ -251,15 +367,96 @@ void testStartCommand() {
            "Close uses the AVDTP Close signal identifier");
 }
 
+void testTransactionTableAndStreamState() {
+    TransactionTable transactions;
+    std::array<Byte, 16> labels{};
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        const auto reserved = transactions.begin(SignalId::Discover);
+        expect(static_cast<bool>(reserved), "reserve an AVDTP transaction label");
+        labels[index] = reserved.value;
+    }
+    expect(transactions.outstanding() == labels.size(),
+           "track all outstanding AVDTP transactions");
+    expect(transactions.begin(SignalId::Open).error ==
+               Error::NoTransactionAvailable,
+           "reject allocation after all sixteen labels are busy");
+
+    const auto wrongResponse = transactions.complete({
+        {labels[0], PacketType::Single, MessageType::Accept,
+         static_cast<Byte>(SignalId::Open)},
+        {},
+    });
+    expect(wrongResponse.error == Error::UnexpectedSignal &&
+               transactions.outstanding() == labels.size(),
+           "do not consume a transaction on a mismatched response");
+
+    const auto response = transactions.complete({
+        {labels[0], PacketType::Single, MessageType::Accept,
+         static_cast<Byte>(SignalId::Discover)},
+        {},
+    });
+    expect(static_cast<bool>(response) &&
+               response.value.requestSignal == SignalId::Discover,
+           "complete a matching AVDTP transaction");
+    expect(transactions.outstanding() == labels.size() - 1,
+           "release the completed transaction label");
+
+    const auto pendingOpen = transactions.begin(SignalId::Open);
+    expect(static_cast<bool>(pendingOpen), "allocate another transaction label");
+    const auto rejected = transactions.complete({
+        {pendingOpen.value, PacketType::Single, MessageType::GeneralReject, 0x3F},
+        {},
+    });
+    expect(static_cast<bool>(rejected) &&
+               rejected.value.requestSignal == SignalId::Open &&
+               rejected.value.responseType == MessageType::GeneralReject,
+           "correlate a General Reject with its transaction label");
+
+    SourceStreamState stream;
+    auto applyAccepted = [&stream](SignalId request) {
+        return stream.apply({0, request, MessageType::Accept,
+                             static_cast<Byte>(request)});
+    };
+    expect(applyAccepted(SignalId::SetConfiguration) == Error::None &&
+               stream.state() == StreamState::Configured,
+           "SetConfiguration transitions the stream to Configured");
+    expect(applyAccepted(SignalId::Open) == Error::None &&
+               stream.state() == StreamState::Open,
+           "Open transitions the stream to Open");
+    expect(applyAccepted(SignalId::Start) == Error::None &&
+               stream.state() == StreamState::Streaming,
+           "Start transitions the stream to Streaming");
+    expect(applyAccepted(SignalId::Suspend) == Error::None &&
+               stream.state() == StreamState::Open,
+           "Suspend transitions the stream back to Open");
+    expect(applyAccepted(SignalId::Close) == Error::None &&
+               stream.state() == StreamState::Configured,
+           "Close transitions the stream to Configured");
+    expect(applyAccepted(SignalId::Abort) == Error::None &&
+               stream.state() == StreamState::Idle,
+           "Abort resets the stream to Idle");
+
+    SourceStreamState invalidOrder;
+    expect(invalidOrder.apply({0, SignalId::Start, MessageType::Accept,
+                               static_cast<Byte>(SignalId::Start)}) ==
+               Error::InvalidStreamState &&
+               invalidOrder.state() == StreamState::Idle,
+           "reject out-of-order stream state transitions");
+}
+
 } // namespace
 
 int main() {
     testCommandBuildAndParse();
     testMalformedPacketsAreRejected();
+    testAvdtpFragmentationRoundTrip();
+    testFragmentationRejectsInvalidSequences();
+    testSbcRtpPacketization();
     testDiscoverAccept();
     testServiceCapabilitiesAndSbc();
     testMalformedCapabilitiesAndSetConfiguration();
     testStartCommand();
+    testTransactionTableAndStreamState();
     std::cout << "AVDTP/SBC protocol tests passed\n";
     return EXIT_SUCCESS;
 }

@@ -1,5 +1,6 @@
 #include "open_a2dp/avdtp.hpp"
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <utility>
@@ -8,9 +9,14 @@ namespace opena2dp::avdtp {
 namespace {
 
 constexpr std::size_t kHeaderSize = 2;
+constexpr std::size_t kStartHeaderSize = 3;
+constexpr std::size_t kContinuationHeaderSize = 1;
 constexpr std::size_t kMaximumSinglePacketSize = 0xFFFF;
+constexpr std::size_t kMaximumSignalPayloadSize =
+    kMaximumSinglePacketSize - kHeaderSize;
 constexpr Byte kMaximumTransactionLabel = 0x0F;
 constexpr Byte kMaximumSignalId = 0x3F;
+constexpr Byte kMaximumSignalPackets = 0xFF;
 constexpr Byte kMaximumSeid = 0x3E;
 constexpr Byte kReservedHeaderMask = 0xC0;
 constexpr Byte kDiscoverReservedSeidMask = 0x80;
@@ -148,12 +154,239 @@ Result<PacketView> parseSinglePacket(std::span<const Byte> packet) noexcept {
     return {{header, packet.subspan(kHeaderSize)}, Error::None};
 }
 
+Result<MessageAssemblerEvent> MessageAssembler::consume(
+    std::span<const Byte> packet) {
+    if (l2capMtu_ < kHeaderSize || l2capMtu_ > kMaximumSinglePacketSize) {
+        reset();
+        return {{}, Error::InvalidMtu};
+    }
+    if (packet.empty()) {
+        reset();
+        return {{}, Error::TruncatedPacket};
+    }
+    if (packet.size() > l2capMtu_ || packet.size() > kMaximumSinglePacketSize) {
+        reset();
+        return {{}, Error::PacketTooLarge};
+    }
+
+    const Byte first = packet[0];
+    const Byte transactionLabel = static_cast<Byte>(first >> 4);
+    const auto packetType = static_cast<PacketType>((first >> 2) & 0x03);
+    const auto messageType = static_cast<MessageType>(first & 0x03);
+
+    if (packetType == PacketType::Single) {
+        if (active_) {
+            reset();
+            return {{}, Error::InvalidFragmentSequence};
+        }
+
+        const auto parsed = parseSinglePacket(packet);
+        if (!parsed) {
+            return {{}, parsed.error};
+        }
+
+        MessageAssemblerEvent event;
+        event.complete = true;
+        event.message.header = parsed.value.header;
+        event.message.payload.assign(parsed.value.payload.begin(),
+                                     parsed.value.payload.end());
+        return {std::move(event), Error::None};
+    }
+
+    if (packetType == PacketType::Start) {
+        if (active_) {
+            reset();
+            return {{}, Error::InvalidFragmentSequence};
+        }
+        if (packet.size() < kStartHeaderSize) {
+            reset();
+            return {{}, Error::TruncatedPacket};
+        }
+        if ((packet[2] & kReservedHeaderMask) != 0) {
+            reset();
+            return {{}, Error::ReservedBitsSet};
+        }
+
+        const Byte signalId = static_cast<Byte>(packet[2] & kMaximumSignalId);
+        const Byte packetCount = packet[1];
+        if (signalId == 0) {
+            reset();
+            return {{}, Error::InvalidSignalId};
+        }
+        if (packetCount < 2) {
+            reset();
+            return {{}, Error::InvalidFragmentCount};
+        }
+
+        const auto firstPayload = packet.subspan(kStartHeaderSize);
+        if (firstPayload.empty()) {
+            reset();
+            return {{}, Error::InvalidFragmentSequence};
+        }
+
+        active_ = true;
+        pendingHeader_ = {
+            transactionLabel, PacketType::Single, messageType, signalId};
+        expectedPackets_ = packetCount;
+        receivedPackets_ = 1;
+        pendingPayload_.assign(firstPayload.begin(), firstPayload.end());
+        if (pendingPayload_.size() > kMaximumSignalPayloadSize) {
+            reset();
+            return {{}, Error::MessageTooLarge};
+        }
+        return {MessageAssemblerEvent{}, Error::None};
+    }
+
+    if (!active_) {
+        return {{}, Error::InvalidFragmentSequence};
+    }
+    if (packet.size() <= kContinuationHeaderSize) {
+        reset();
+        return {{}, Error::TruncatedPacket};
+    }
+    if (transactionLabel != pendingHeader_.transactionLabel) {
+        reset();
+        return {{}, Error::TransactionLabelMismatch};
+    }
+    if (messageType != pendingHeader_.messageType) {
+        reset();
+        return {{}, Error::InvalidFragmentSequence};
+    }
+
+    const std::size_t nextPacketCount = receivedPackets_ + 1;
+    if (nextPacketCount > expectedPackets_ ||
+        (packetType == PacketType::Continue &&
+         nextPacketCount >= expectedPackets_) ||
+        (packetType == PacketType::End &&
+         nextPacketCount != expectedPackets_)) {
+        reset();
+        return {{}, Error::InvalidFragmentCount};
+    }
+
+    const auto fragmentPayload = packet.subspan(kContinuationHeaderSize);
+    if (fragmentPayload.size() >
+        kMaximumSignalPayloadSize - pendingPayload_.size()) {
+        reset();
+        return {{}, Error::MessageTooLarge};
+    }
+    pendingPayload_.insert(pendingPayload_.end(), fragmentPayload.begin(),
+                           fragmentPayload.end());
+    receivedPackets_ = static_cast<Byte>(nextPacketCount);
+
+    if (packetType == PacketType::Continue) {
+        return {MessageAssemblerEvent{}, Error::None};
+    }
+
+    MessageAssemblerEvent event;
+    event.complete = true;
+    event.message.header = pendingHeader_;
+    event.message.payload = std::move(pendingPayload_);
+    reset();
+    return {std::move(event), Error::None};
+}
+
+void MessageAssembler::reset() noexcept {
+    active_ = false;
+    pendingHeader_ = {};
+    expectedPackets_ = 0;
+    receivedPackets_ = 0;
+    pendingPayload_.clear();
+}
+
 Result<std::vector<Byte>> makeCommandPacket(
     Byte transactionLabel,
     SignalId signalId,
     std::span<const Byte> payload) {
     return makePacket(transactionLabel, MessageType::Command,
                       static_cast<Byte>(signalId), payload);
+}
+
+Result<std::vector<std::vector<Byte>>> fragmentSignalMessage(
+    Byte transactionLabel,
+    MessageType messageType,
+    SignalId signalId,
+    std::span<const Byte> payload,
+    std::size_t l2capMtu) {
+    const Byte signal = static_cast<Byte>(signalId);
+    if (transactionLabel > kMaximumTransactionLabel) {
+        return {{}, Error::InvalidTransactionLabel};
+    }
+    if (signal == 0 || signal > kMaximumSignalId) {
+        return {{}, Error::InvalidSignalId};
+    }
+    if (l2capMtu < kHeaderSize || l2capMtu > kMaximumSinglePacketSize) {
+        return {{}, Error::InvalidMtu};
+    }
+    if (payload.size() > kMaximumSignalPayloadSize) {
+        return {{}, Error::MessageTooLarge};
+    }
+
+    if (payload.size() + kHeaderSize <= l2capMtu) {
+        auto packet = makePacket(transactionLabel, messageType, signal, payload);
+        if (!packet) {
+            return {{}, packet.error};
+        }
+        std::vector<std::vector<Byte>> packets;
+        packets.push_back(std::move(packet.value));
+        return {std::move(packets), Error::None};
+    }
+
+    if (l2capMtu < kStartHeaderSize + 1) {
+        return {{}, Error::InvalidMtu};
+    }
+
+    const std::size_t startCapacity = l2capMtu - kStartHeaderSize;
+    const std::size_t continuationCapacity =
+        l2capMtu - kContinuationHeaderSize;
+    const std::size_t remainingAfterStart = payload.size() - startCapacity;
+    const std::size_t continuationPackets =
+        (remainingAfterStart + continuationCapacity - 1) /
+        continuationCapacity;
+    const std::size_t packetCount = 1 + continuationPackets;
+    if (packetCount > kMaximumSignalPackets) {
+        return {{}, Error::TooManyFragments};
+    }
+
+    std::vector<std::vector<Byte>> packets;
+    packets.reserve(packetCount);
+
+    const Byte startHeader = static_cast<Byte>(
+        (transactionLabel << 4) |
+        (static_cast<Byte>(PacketType::Start) << 2) |
+        static_cast<Byte>(messageType));
+    std::vector<Byte> startPacket;
+    startPacket.reserve(l2capMtu);
+    startPacket.push_back(startHeader);
+    startPacket.push_back(static_cast<Byte>(packetCount));
+    startPacket.push_back(signal);
+    startPacket.insert(startPacket.end(), payload.begin(),
+                       payload.begin() + static_cast<std::ptrdiff_t>(startCapacity));
+    packets.push_back(std::move(startPacket));
+
+    std::size_t offset = startCapacity;
+    while (offset < payload.size()) {
+        const std::size_t remaining = payload.size() - offset;
+        const std::size_t chunkSize =
+            std::min(remaining, continuationCapacity);
+        const bool isLast = chunkSize == remaining;
+        const PacketType packetType =
+            isLast ? PacketType::End : PacketType::Continue;
+        const Byte continuationHeader = static_cast<Byte>(
+            (transactionLabel << 4) |
+            (static_cast<Byte>(packetType) << 2) |
+            static_cast<Byte>(messageType));
+
+        std::vector<Byte> fragment;
+        fragment.reserve(kContinuationHeaderSize + chunkSize);
+        fragment.push_back(continuationHeader);
+        fragment.insert(
+            fragment.end(), payload.begin() + static_cast<std::ptrdiff_t>(offset),
+            payload.begin() + static_cast<std::ptrdiff_t>(offset + chunkSize));
+        packets.push_back(std::move(fragment));
+        offset += chunkSize;
+    }
+
+    return {std::move(packets), Error::None};
 }
 
 Result<std::vector<Byte>> makeDiscoverCommand(Byte transactionLabel) {

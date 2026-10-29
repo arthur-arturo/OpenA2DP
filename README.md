@@ -82,8 +82,8 @@ la paquetización AVDTP.
 
 ## Limitaciones conocidas
 
-- El núcleo AVDTP sólo procesa/builda mensajes aislados; no hay una sesión AVDTP
-  negociada ni conexión L2CAP/Bluetooth.
+- El núcleo maneja señalización AVDTP aislada y paquetiza SBC en RTP, pero no
+  mantiene una sesión negociada ni conecta con L2CAP/Bluetooth.
 - No se implementa un driver de audio virtual ni un servicio permanente.
 - No se inyectan códecs en `btha2dp.sys`.
 - La salida de Loopback corresponde al endpoint que Windows está renderizando;
@@ -108,12 +108,14 @@ patentes y condiciones de redistribución requieren decisiones por separado.
 
 ## Núcleo AVDTP en desarrollo
 
-El proyecto incluye ahora un núcleo portable para mensajes AVDTP de paquete
-único, descubrimiento de SEID, listas de capacidades, generación de comandos
+El proyecto incluye ahora un núcleo portable para mensajes AVDTP single y
+fragmentados, descubrimiento de SEID, listas de capacidades, generación de comandos
 `GetCapabilities`/`SetConfiguration`/`GetConfiguration`/`Open`/`Start`/
-`Suspend`/`Close`/`Abort`, y validación de parámetros SBC. Tiene pruebas
-unitarias y no abre conexiones Bluetooth: aún faltan fragmentación AVDTP,
-negociación completa, el driver de perfil y el transporte L2CAP.
+`Suspend`/`Close`/`Abort`, validación SBC y construcción de paquetes de medios
+RTP/SBC. También correlaciona las 16 etiquetas de transacción y modela las
+transiciones básicas del SEP Source. Tiene pruebas unitarias, pero aún faltan
+timeout/retry de sesión, negociación conectada a un dispositivo, el driver de
+perfil y el transporte L2CAP.
 
 Para ejecutar únicamente las pruebas del protocolo en una máquina con CMake y
 un compilador C++20:
