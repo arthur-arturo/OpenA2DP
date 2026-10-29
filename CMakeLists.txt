@@ -69,6 +69,15 @@ if(OPENA2DP_BUILD_WASAPI_POC)
         endforeach()
         # The upstream header does not decorate LDACBT_API with __declspec(dllexport).
         set_target_properties(ldacBT_enc PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+        # This AOSP snapshot has two POSIX/GCC-only decorations that are not
+        # used by the encoder on Windows: an unused attribute and unistd.h.
+        target_include_directories(ldacBT_enc BEFORE PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/compat"
+        )
+        target_compile_options(ldacBT_enc PRIVATE
+            "/FI${CMAKE_CURRENT_SOURCE_DIR}/cmake/compat/ldac_msvc_compat.h"
+        )
     endif()
 
     add_executable(opena2dp

@@ -40,6 +40,8 @@ pueda sustituirse por un hook o por un servicio user-mode.
 - CMake 3.25+ y Git disponibles en `PATH`.
 - Conexión a Internet la primera vez para descargar el wrapper CMake de
   `libldac` y su submódulo AOSP, ambos fijados en el build.
+- El build de MSVC añade shims privados para los dos encabezados/extensiones
+  POSIX/GCC no utilizados por el encoder.
 
 ## Compilar
 
