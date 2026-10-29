@@ -469,7 +469,7 @@ void writeCaptureHeader(std::ofstream& output, const Options& options) {
 }
 
 void writeLdacRecord(std::ofstream& output,
-                     const std::array<unsigned char, LDACBT_MAX_NBYTE>& data,
+                     const std::array<unsigned char, LDACBT_MAX_NBYTES>& data,
                      int byteCount,
                      int frameCount) {
     check(byteCount >= 0 &&
@@ -489,7 +489,7 @@ void writeLdacRecord(std::ofstream& output,
 
 void encodeBlock(HANDLE_LDAC_BT encoder,
                  std::array<float, kSamplesPerLdacBlock>& pcm,
-                 std::array<unsigned char, LDACBT_MAX_NBYTE>& encoded,
+                 std::array<unsigned char, LDACBT_MAX_NBYTES>& encoded,
                  std::ofstream& output) {
     int pcmUsed = 0;
     int streamSize = 0;
@@ -554,7 +554,7 @@ private:
             }
 
             std::array<float, kSamplesPerLdacBlock> pcm{};
-            std::array<unsigned char, LDACBT_MAX_NBYTE> encoded{};
+            std::array<unsigned char, LDACBT_MAX_NBYTES> encoded{};
 
             for (;;) {
                 const DWORD wait = WaitForSingleObject(dataReady_.get(), INFINITE);
