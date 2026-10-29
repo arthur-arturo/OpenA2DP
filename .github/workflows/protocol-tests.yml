@@ -1,0 +1,20 @@
+name: Portable protocol tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  avdtp-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure protocol-only build
+        run: cmake -S . -B build -DOPENA2DP_BUILD_WASAPI_POC=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

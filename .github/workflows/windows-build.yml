@@ -15,3 +15,6 @@ jobs:
 
       - name: Build Release
         run: cmake --build build --config Release --parallel
+
+      - name: Run protocol tests
+        run: ctest --test-dir build -C Release --output-on-failure

@@ -48,6 +48,7 @@ Desde Developer PowerShell for VS 2022:
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
 ```
 
 ## Uso
@@ -79,7 +80,8 @@ la paquetización AVDTP.
 
 ## Limitaciones conocidas
 
-- No hay negociación AVDTP ni conexión Bluetooth.
+- El núcleo AVDTP sólo procesa/builda mensajes aislados; no hay una sesión AVDTP
+  negociada ni conexión L2CAP/Bluetooth.
 - No se implementa un driver de audio virtual ni un servicio permanente.
 - No se inyectan códecs en `btha2dp.sys`.
 - La salida de Loopback corresponde al endpoint que Windows está renderizando;
@@ -101,6 +103,24 @@ ejecutable.
 
 aptX, AAC y otros códecs no están incluidos en esta PoC. Sus dependencias,
 patentes y condiciones de redistribución requieren decisiones por separado.
+
+## Núcleo AVDTP en desarrollo
+
+El proyecto incluye ahora un núcleo portable para mensajes AVDTP de paquete
+único, descubrimiento de SEID, listas de capacidades, generación de comandos
+`GetCapabilities`/`SetConfiguration`/`GetConfiguration`/`Open`/`Start`/
+`Suspend`/`Close`/`Abort`, y validación de parámetros SBC. Tiene pruebas
+unitarias y no abre conexiones Bluetooth: aún faltan fragmentación AVDTP,
+negociación completa, el driver de perfil y el transporte L2CAP.
+
+Para ejecutar únicamente las pruebas del protocolo en una máquina con CMake y
+un compilador C++20:
+
+```sh
+cmake -S . -B build-protocol -DOPENA2DP_BUILD_WASAPI_POC=OFF
+cmake --build build-protocol
+ctest --test-dir build-protocol --output-on-failure
+```
 
 ## Siguiente hito para llegar al producto
 

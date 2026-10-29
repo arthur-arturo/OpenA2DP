@@ -10,6 +10,12 @@ ruta crítica de audio.
 La primera entrega de este repositorio valida solo una parte: WASAPI Loopback y
 codificación LDAC en user-mode. No es el driver final.
 
+El núcleo `opena2dp_protocol` implementa actualmente la codificación/lectura de
+headers AVDTP single-packet, comandos Source básicos, parsing de Discover y
+Service Capabilities, y parsing/validación de la información SBC. Rechaza
+explícitamente fragmentos AVDTP; todavía no posee una conexión L2CAP ni controla
+un auricular.
+
 ## Estado de las interfaces Windows
 
 ### Bluetooth
@@ -144,13 +150,17 @@ Fuentes:
 - Cola PCM acotada y worker de codificación.
 - LDAC HQ/SQ/MQ a las frecuencias soportadas.
 - Archivo de captura para pruebas.
+- Núcleo portable AVDTP single-packet y negociación/validación de capacidades SBC.
+- Pruebas unitarias del parser y de los builders de comandos.
 
 ### Hito 2 — driver mínimo de audio y transporte
 
 - Acordar el editor/firma.
 - Crear proyecto WDK y verificar binding por dispositivo en una máquina de
   laboratorio con Secure Boot según el proceso de desarrollo aplicable.
-- Exponer audio y hacer AVDTP/SBC básico.
+- Completar fragmentación/validación AVDTP y conectarlo a un driver de perfil
+  usando BRB de `BthPort`.
+- Exponer audio y transmitir SBC básico.
 - Probar HID simultáneamente, suspensión/reanudación y rollback.
 
 ### Hito 3 — producto
