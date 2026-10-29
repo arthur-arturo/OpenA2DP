@@ -1,7 +1,6 @@
 #include <windows.h>
 #include <avrt.h>
 #include <audioclient.h>
-#include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
 #include <mmdeviceapi.h>
 #include <propidl.h>
@@ -51,6 +50,14 @@ constexpr DWORD kCaptureFlags =
     AUDCLNT_STREAMFLAGS_EVENTCALLBACK |
     AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
     AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+
+// PKEY_Device_FriendlyName from functiondiscoverykeys_devpkey.h. Keeping the
+// key local avoids requiring DEFINE_PROPERTYKEY/INITGUID or a GUID import lib.
+constexpr PROPERTYKEY kPkeyDeviceFriendlyName{
+    {0xA45C254E, 0xDF1C, 0x4EFD,
+     {0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0}},
+    14,
+};
 
 class HResultError final : public std::runtime_error {
 public:
@@ -253,7 +260,7 @@ std::wstring getFriendlyName(IMMDevice* device) {
 
     PROPVARIANT value;
     PropVariantInit(&value);
-    const HRESULT result = properties->GetValue(PKEY_Device_FriendlyName, &value);
+    const HRESULT result = properties->GetValue(kPkeyDeviceFriendlyName, &value);
 
     std::wstring name = L"(sin nombre)";
     if (SUCCEEDED(result) && value.vt == VT_LPWSTR && value.pwszVal) {
