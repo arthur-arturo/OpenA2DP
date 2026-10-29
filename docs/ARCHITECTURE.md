@@ -158,13 +158,14 @@ Fuentes:
 
 ### Hito 2 — driver mínimo de audio y transporte
 
-- Acordar el editor/firma.
-- Crear proyecto WDK y verificar binding por dispositivo en una máquina de
-  laboratorio con Secure Boot según el proceso de desarrollo aplicable.
-- Añadir timeout/retry a las transacciones y conectar la state machine con un
-  driver de perfil usando BRB de `BthPort`.
+- Existe un proyecto KMDF `driver/opena2dp` que consulta la interfaz de perfil,
+  obtiene la dirección remota y abre/cierra AVDTP por BRB. Está pendiente de
+  validación en hardware; no es todavía un endpoint de audio.
+- Añadir recepción/transmisión de señalización AVDTP, timeouts y negociación SBC.
 - Exponer audio y transmitir SBC básico.
-- Probar HID simultáneamente, suspensión/reanudación y rollback.
+- Probar HID simultáneamente, suspensión/reanudación y rollback en una máquina
+  de laboratorio.
+- Acordar el editor/firma antes de distribuir binarios a usuarios.
 
 ### Hito 3 — producto
 

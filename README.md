@@ -114,8 +114,14 @@ fragmentados, descubrimiento de SEID, listas de capacidades, generación de coma
 `Suspend`/`Close`/`Abort`, validación SBC y construcción de paquetes de medios
 RTP/SBC. También correlaciona las 16 etiquetas de transacción y modela las
 transiciones básicas del SEP Source. Tiene pruebas unitarias, pero aún faltan
-timeout/retry de sesión, negociación conectada a un dispositivo, el driver de
-perfil y el transporte L2CAP.
+timeout/retry de sesión, negociación conectada a un dispositivo y el endpoint de
+audio integrado.
+
+En `driver/opena2dp` también hay un driver KMDF en desarrollo que abre y cierra
+el canal AVDTP usando BRB de `BthPort`. No usa WinUSB ni cambia el driver del
+adaptador. Actualmente sólo establece el canal de señalización; todavía no crea
+un endpoint de audio ni transmite contenido. Su INF es experimental y no debe
+instalarse en un equipo de producción.
 
 Para ejecutar únicamente las pruebas del protocolo en una máquina con CMake y
 un compilador C++20:

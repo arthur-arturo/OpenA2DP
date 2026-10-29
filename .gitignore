@@ -2,6 +2,10 @@
 /build-protocol/
 /out/
 /.vs/
+/driver/packages/
+/driver/opena2dp/x64/
+/driver/opena2dp/Release/
+/driver/opena2dp/Debug/
 *.user
 *.suo
 *.oa2dpcap
