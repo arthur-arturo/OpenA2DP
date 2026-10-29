@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <propkeydef.h>
 #include <avrt.h>
 #include <audioclient.h>
 #include <ksmedia.h>
