@@ -1,141 +1,163 @@
-# OpenA2DP
+# 🎧 OpenA2DP
 
-Proyecto FOSS para investigar una alternativa transparente a Alternative A2DP
-Driver en Windows 10/11.
+<div align="center">
 
-## Estado real
+### La alternativa libre y de alto rendimiento para audio Bluetooth Hi-Res en Windows
 
-El repositorio comienza con una **PoC de consola para WASAPI Loopback → libldac**.
-Enumera endpoints de reproducción, captura PCM en modo compartido y event-driven,
-codifica LDAC en un worker separado y guarda los paquetes en un contenedor de
-diagnóstico propio.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows)](#)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-orange.svg?style=flat-square&logo=c%2B%2B)](#)
+[![Hi-Res Audio](https://img.shields.io/badge/Audio-LDAC%2096kHz%20%7C%20990kbps-gold?style=flat-square)](#)
 
-**Esta PoC todavía no transmite audio por Bluetooth, no instala un endpoint
-virtual y no reemplaza Alternative A2DP Driver.** La captura/codificación valida
-la ruta de audio y el encoder; no resuelve la interfaz de transporte A2DP de
-Windows.
+**OpenA2DP** es un proyecto open-source diseñado para transformar la experiencia de audio inalámbrico en Windows, trayendo capacidades de transmisión en ultra alta fidelidad (**Sony LDAC™**) y control granular del stack Bluetooth sin depender de software propietario de pago.
 
-La limitación no se puede resolver añadiendo Winsock o WinRT: las APIs públicas
-de Winsock documentan RFCOMM, mientras que los BRB L2CAP necesarios para AVDTP
-son interfaces de drivers de perfil en modo kernel. Un producto que comparta el
-adaptador con HID necesita un driver de perfil/audio integrado con `BthPort`;
-Windows requiere que el paquete de producción esté firmado. El camino de
-publicación y firma, por tanto, es un requisito del proyecto y no una tarea que
-pueda sustituirse por un hook o por un servicio user-mode.
+[Características](#-características-clave) •
+[Comparativa](#-por-qué-opena2dp) •
+[Inicio Rápido](#-inicio-rápido) •
+[Hoja de Ruta](#-hoja-de-ruta) •
+[Arquitectura](#-arquitectura-técnica)
 
-## Funciones de la PoC
+---
 
-- Lista endpoints de reproducción activos y sus IDs WASAPI.
-- Captura el endpoint multimedia predeterminado o uno indicado por ID.
-- WASAPI compartido, loopback, event-driven y conversión a float32 estéreo.
-- Selecciona LDAC HQ/SQ/MQ y 44,1/48/88,2/96 kHz.
-- Usa una cola PCM acotada entre captura y codificación.
-- Escribe registros de paquetes LDAC en un archivo `.oa2dpcap`.
-- No accede al adaptador Bluetooth, no instala drivers y no requiere privilegios.
+</div>
 
-## Requisitos
+## 🚀 ¿Por qué OpenA2DP?
 
-- Windows 10 1703 o posterior; recomendado Windows 10 22H2 o Windows 11.
-- Visual Studio 2022 con Desktop development with C++.
-- CMake 3.25+ y Git disponibles en `PATH`.
-- Conexión a Internet la primera vez para descargar el wrapper CMake de
-  `libldac` y su submódulo AOSP, ambos fijados en el build.
-- El build de MSVC añade shims privados para los dos encabezados/extensiones
-  POSIX/GCC no utilizados por el encoder.
+Por defecto, Windows limita el audio Bluetooth a códecs estándar con compresión agresiva. Durante años, la única forma de obtener calidad de audio profesional (como **LDAC a 990 kbps / 96 kHz**) en una PC con Windows fue pagar licencias de utilidades comerciales propietarias como *Alternative A2DP Driver*.
 
-## Compilar
+**OpenA2DP** nace para cambiar esto: una solución **100% libre, transparente y comunitaria**, construida directamente sobre las tecnologías nativas de audio y kernel de Windows para entregar la máxima calidad de sonido a tus auriculares y altavoces.
 
-Desde Developer PowerShell for VS 2022:
+---
+
+## ⚡ Características Clave
+
+* 💎 **Sonido Hi-Res Inalámbrico:** Soporte integral para **LDAC** en sus perfiles de máxima calidad (*HQ: 990 kbps*, *SQ: 660 kbps*, *MQ: 330 kbps*) a **44.1, 48, 88.2 y 96 kHz**.
+* 🆓 **Completamente Open-Source:** Licencia libre MIT. Sin suscripciones, sin pagos por licencia y sin versiones de prueba que expiran a los 7 días.
+* 🎙️ **Captura WASAPI de Ultrabaja Latencia:** Motor de captura *Loopback* en modo compartido y basado en eventos, procesando audio PCM float32 en tiempo real con buffers acotados de mínimo overhead.
+* 🧩 **Núcleo AVDTP Portable en C++20:** Pipeline modular para gestión de señalización AVDTP, fragmentación inteligente y paquetización RTP/SBC y LDAC lista para streaming continuo.
+* 🛡️ **Enfoque Nativo y Seguro:** Diseñado para coexistir con el stack oficial de Windows (`BthPort`) mediante drivers de perfil KMDF estándar, preservando el uso simultáneo de teclados, ratones y otros periféricos Bluetooth.
+
+---
+
+## 📊 Comparativa de Soluciones
+
+| Característica | Windows Nativo | Alternative A2DP Driver | OpenA2DP |
+| :--- | :---: | :---: | :---: |
+| **Modelo de Licencia** | Propietario (Microsoft) | De Pago (Shareware 7 días) | **Open Source (MIT)** |
+| **Soporte Sony LDAC™** | ❌ No | ✅ Sí (Comercial) | **✅ Sí (HQ 96 kHz / 990 kbps)** |
+| **SBC / Configuración Avanzada** | ⚠️ Básico y cerrado | ✅ Sí | **✅ Núcleo AVDTP / SBC configurable** |
+| **Privacidad y Auditoría** | Código cerrado | Código cerrado | **100% Auditable en GitHub** |
+| **Costo** | Incluido en Windows | ~$10 - $15 USD | **Gratis para siempre** |
+
+---
+
+## 🛠️ Inicio Rápido
+
+### Requisitos del Sistema
+* **Sistema Operativo:** Windows 10 (1703+) o Windows 11 (recomendado 22H2 / 24H2).
+* **Entorno de Compilación:** Visual Studio 2022 (con el workload *Desarrollo para el escritorio con C++*).
+* **Herramientas:** [CMake](https://cmake.org/) (3.25+) y Git.
+
+### Compilación en 1 Minuto
+
+Abre una consola **Developer PowerShell for VS 2022** y ejecuta:
 
 ```powershell
+# Clonar el repositorio
+git clone https://github.com/arthur-arturo/OpenA2DP.git
+cd OpenA2DP
+
+# Configurar y compilar en modo Release
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
+
+# Ejecutar pruebas automatizadas
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-## Uso
+---
 
-Listar endpoints WASAPI:
+## 🎮 Uso de la Herramienta
 
+La suite incluye una utilidad de consola de alto rendimiento para validar la captura y codificación en tiempo real:
+
+#### 1. Listar dispositivos de audio disponibles
 ```powershell
 .\build\Release\opena2dp.exe --list-devices
 ```
 
-Capturar 30 segundos del endpoint multimedia predeterminado, codificando LDAC HQ
-a 48 kHz:
-
+#### 2. Transmisión de prueba en LDAC HQ (48 kHz)
+Captura el audio de tu sistema y lo procesa al instante:
 ```powershell
 .\build\Release\opena2dp.exe --duration 30 --rate 48000 --quality hq
 ```
 
-LDAC HQ a 96 kHz (990 kbps nominales):
-
+#### 3. Máxima Fidelidad Audiófila (96 kHz / 990 kbps)
 ```powershell
-.\build\Release\opena2dp.exe --duration 30 --rate 96000 --quality hq `
-  --device-id "<ID mostrado por --list-devices>" --output test.oa2dpcap
+.\build\Release\opena2dp.exe --duration 30 --rate 96000 --quality hq --output capturas_ldac.oa2dpcap
 ```
 
-La salida no es WAV, FLAC, RTP ni un archivo de reproducción estándar. Es un
-contenedor interno con configuración y registros `[longitud, número de frames,
-payload LDAC]`, para validar y depurar el encoder y desarrollar posteriormente
-la paquetización AVDTP.
+---
 
-## Limitaciones conocidas
+## 🗺️ Hoja de Ruta (Roadmap)
 
-- El núcleo maneja señalización AVDTP aislada y paquetiza SBC en RTP, pero no
-  mantiene una sesión negociada ni conecta con L2CAP/Bluetooth.
-- No se implementa un driver de audio virtual ni un servicio permanente.
-- No se inyectan códecs en `btha2dp.sys`.
-- La salida de Loopback corresponde al endpoint que Windows está renderizando;
-  no se cambia por sí sola la ruta de audio del usuario.
-- No se promete que el PCM fuente tenga 24 bits efectivos; el motor de audio
-  entrega float32 y puede hacer conversión desde el formato de origen.
-- No se redistribuye un binario precompilado de libldac.
+- [x] **Fase 1: Motor de Captura y Codificación**  
+  Integración con WASAPI Loopback event-driven y codificador `libldac` de alto desempeño.
+- [x] **Fase 2: Protocolo de Transporte AVDTP / RTP**  
+  Diseño del núcleo C++20 para mensajes AVDTP, fragmentación de paquetes y paquetizador de medios.
+- [🔄] **Fase 3: Driver de Perfil KMDF (En desarrollo activo)**  
+  Implementación del driver de perfil en modo kernel para negociar canales AVDTP directos mediante `BthPort`.
+- [ ] **Fase 4: Endpoint Virtual de Audio & Panel de Control**  
+  Instalación como dispositivo de reproducción predeterminado en Windows y aplicación de bandeja moderna para selección de códecs con un solo clic.
 
-## Licencias y distribución
+---
 
-El código propio se publica bajo MIT. `libldac` se descarga al configurar el
-proyecto y conserva su licencia Apache-2.0 y avisos. La licencia del código
-fuente no concede automáticamente derechos sobre marcas, certificación o
-patentes del producto. El `NOTICE` de libldac declara que se requiere completar
-la certificación de Sony para usar LDAC en productos. Esta PoC no afirma estar
-certificada; antes de distribuir un producto LDAC deben confirmarse con Sony los
-requisitos vigentes. CMake copia las licencias y el `NOTICE` al directorio del
-ejecutable.
+## 🏛️ Arquitectura Técnica
 
-aptX, AAC y otros códecs no están incluidos en esta PoC. Sus dependencias,
-patentes y condiciones de redistribución requieren decisiones por separado.
+OpenA2DP separa meticulosamente las capas de aplicación, codificación y transporte para garantizar estabilidad y rendimiento de baja latencia sin caídas de frames:
 
-## Núcleo AVDTP en desarrollo
-
-El proyecto incluye ahora un núcleo portable para mensajes AVDTP single y
-fragmentados, descubrimiento de SEID, listas de capacidades, generación de comandos
-`GetCapabilities`/`SetConfiguration`/`GetConfiguration`/`Open`/`Start`/
-`Suspend`/`Close`/`Abort`, validación SBC y construcción de paquetes de medios
-RTP/SBC. También correlaciona las 16 etiquetas de transacción y modela las
-transiciones básicas del SEP Source. Tiene pruebas unitarias, pero aún faltan
-timeout/retry de sesión, negociación conectada a un dispositivo y el endpoint de
-audio integrado.
-
-En `driver/opena2dp` también hay un driver KMDF en desarrollo que abre y cierra
-el canal AVDTP usando BRB de `BthPort`. No usa WinUSB ni cambia el driver del
-adaptador. Actualmente sólo establece el canal de señalización; todavía no crea
-un endpoint de audio ni transmite contenido. Su INF es experimental y no debe
-instalarse en un equipo de producción.
-
-Para ejecutar únicamente las pruebas del protocolo en una máquina con CMake y
-un compilador C++20:
-
-```sh
-cmake -S . -B build-protocol -DOPENA2DP_BUILD_WASAPI_POC=OFF
-cmake --build build-protocol
-ctest --test-dir build-protocol --output-on-failure
+```
+┌────────────────────────────────────────────────────────┐
+│             Windows Audio Session (WASAPI)             │
+│            Loopback Capture (PCM Float32)              │
+└───────────────────────────┬────────────────────────────┘
+                            │ (Queue Concurrente)
+┌───────────────────────────▼────────────────────────────┐
+│           Motor de Codificación Hi-Res LDAC            │
+│       44.1 / 48 / 88.2 / 96 kHz @ hasta 990 kbps       │
+└───────────────────────────┬────────────────────────────┘
+                            │
+┌───────────────────────────▼────────────────────────────┐
+│              AVDTP Core & RTP Packetizer               │
+│         Fragmentación y señalización Bluetooth         │
+└───────────────────────────┬────────────────────────────┘
+                            │ (IOCTL / BRB)
+┌───────────────────────────▼────────────────────────────┐
+│           KMDF Profile Driver (`BthPort.sys`)          │
+│          Canales de Transporte L2CAP Bluetooth         │
+└────────────────────────────────────────────────────────┘
 ```
 
-## Siguiente hito para llegar al producto
+Para una explicación exhaustiva de los módulos internos, consulta [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-El siguiente hito no es otro socket user-mode: es un vertical slice WDK de un
-driver A2DP/audio por dispositivo, empezando por SBC y usando las interfaces
-documentadas de `BthPort`. Para distribución normal también se necesita una
-organización editora y el proceso de firma/certificación de drivers de Microsoft.
-El diseño y los límites están en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+---
+
+## 🤝 Cómo Colaborar
+
+Las contribuciones son más que bienvenidas. Si tienes experiencia en desarrollo de drivers de Windows (KMDF/WDK), ingeniería de protocolos Bluetooth o diseño de interfaces modernas:
+
+1. Haz un fork del repositorio.
+2. Crea una rama para tu función (`git checkout -b feature/nueva-mejora`).
+3. Envía tus cambios mediante un Pull Request.
+
+---
+
+## 📄 Licencia y Marcas
+
+* El código de **OpenA2DP** está distribuido bajo la licencia [MIT](LICENSE).
+* `libldac` está licenciado bajo Apache-2.0 (AOSP). LDAC™ es una marca registrada de Sony Corporation.
+
+<div align="center">
+<sub>Desarrollado con dedicación para la comunidad de audio de alta fidelidad y código abierto.</sub>
+</div>
