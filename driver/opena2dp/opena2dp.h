@@ -2,6 +2,7 @@
 
 #include <ntddk.h>
 #include <wdf.h>
+#include <bthdef.h>
 #include <bthguid.h>
 #include <bthioctl.h>
 #include <bthddi.h>
