@@ -55,6 +55,7 @@ OpenA2dpRetrieveRemoteAddress(
         NULL,
         &output,
         NULL,
+        NULL,
         NULL);
     if (NT_SUCCESS(status)) {
         DeviceContext->RemoteAddress = info.address;
@@ -81,7 +82,7 @@ OpenA2dpOpenCompletion(
     WdfSpinLockAcquire(context->StateLock);
     if (NT_SUCCESS(status)) {
         context->ChannelHandle =
-            ((PBRB_L2CA_OPEN_CHANNEL)&context->OpenBrb)->ChannelHandle;
+            ((struct _BRB_L2CA_OPEN_CHANNEL *)&context->OpenBrb)->ChannelHandle;
         context->State = OpenA2dpChannelOpen;
     } else {
         context->ChannelHandle = NULL;
@@ -98,10 +99,10 @@ OpenA2dpOpenAvdtpChannel(
     _Inout_ POPENA2DP_DEVICE_CONTEXT DeviceContext,
     _In_ WDFREQUEST CreateRequest)
 {
-    PBRB_L2CA_OPEN_CHANNEL brb;
+    struct _BRB_L2CA_OPEN_CHANNEL *brb;
     NTSTATUS status;
 
-    brb = (PBRB_L2CA_OPEN_CHANNEL)&DeviceContext->OpenBrb;
+    brb = (struct _BRB_L2CA_OPEN_CHANNEL *)&DeviceContext->OpenBrb;
     DeviceContext->ProfileInterface.BthReuseBrb(
         (PBRB)brb, BRB_L2CA_OPEN_CHANNEL);
 
@@ -151,7 +152,7 @@ VOID
 OpenA2dpCloseAvdtpChannel(
     _Inout_ POPENA2DP_DEVICE_CONTEXT DeviceContext)
 {
-    PBRB_L2CA_CLOSE_CHANNEL brb;
+    struct _BRB_L2CA_CLOSE_CHANNEL *brb;
     WDF_MEMORY_DESCRIPTOR input;
     WDF_REQUEST_REUSE_PARAMS reuse;
     L2CAP_CHANNEL_HANDLE channel;
@@ -168,7 +169,7 @@ OpenA2dpCloseAvdtpChannel(
     DeviceContext->State = OpenA2dpChannelClosing;
     WdfSpinLockRelease(DeviceContext->StateLock);
 
-    brb = (PBRB_L2CA_CLOSE_CHANNEL)&DeviceContext->CloseBrb;
+    brb = (struct _BRB_L2CA_CLOSE_CHANNEL *)&DeviceContext->CloseBrb;
     DeviceContext->ProfileInterface.BthReuseBrb(
         (PBRB)brb, BRB_L2CA_CLOSE_CHANNEL);
     brb->BtAddress = DeviceContext->RemoteAddress;
@@ -184,6 +185,7 @@ OpenA2dpCloseAvdtpChannel(
         DeviceContext->CloseRequest,
         IOCTL_INTERNAL_BTH_SUBMIT_BRB,
         &input,
+        NULL,
         NULL,
         NULL,
         NULL);
