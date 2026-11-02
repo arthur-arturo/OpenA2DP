@@ -12,18 +12,9 @@ jobs:
 
       - uses: microsoft/setup-msbuild@v2
 
-      - uses: NuGet/setup-nuget@v2
-        with:
-          nuget-version: 6.x
-
-      - name: Restore pinned WDK
-        run: nuget restore driver/opena2dp/packages.config -PackagesDirectory driver/packages
-
       - name: Build KMDF AVDTP profile driver
         shell: pwsh
         run: |
-          $wdk = (Resolve-Path "driver/packages/Microsoft.Windows.WDK.x64.10.0.26100.6584/c").Path
-          $wdkBin = (Resolve-Path "$wdk/bin/10.0.26100.0").Path
-          $windowsSdkBin = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0"
-          $env:PATH = "$wdkBin;$env:PATH"
-          msbuild driver/opena2dp/opena2dp.vcxproj /t:Build /p:Configuration=Release /p:Platform=x64 /p:WDKContentRoot="$wdk/" /p:WDKBuildFolder=10.0.26100.0 /p:WDK_NuGet=true /p:WindowsSDKVersionedBinRoot="$windowsSdkBin/"
+          $wdk = "C:\Program Files (x86)\Windows Kits\10"
+          $wdkBin = "$wdk\bin\10.0.26100.0\"
+          msbuild driver/opena2dp/opena2dp.vcxproj /t:Build /p:Configuration=Release /p:Platform=x64 /p:WDKContentRoot="$wdk\" /p:WDKBuildFolder=10.0.26100.0 /p:WindowsSDKVersionedBinRoot="$wdkBin"
